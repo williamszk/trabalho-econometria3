@@ -1,0 +1,975 @@
+---
+title: "Unemployment, Inflation and Violence: a VAR approach for Brazil"
+author: William Y. N. Suzuki
+output:
+  pdf_document:
+    fig_width: 7
+    fig_height: 4
+fontsize: 10pt
+bibliography: references.bib
+editor_options: 
+  chunk_output_type: console
+---
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, eval = TRUE)
+```
+
+**Este trabalho foi apresentado na disciplina de Econometria 3 ministrada por Márcio P. Laurini e Sérgio Kannebley Júnior no segundo semestre de 2018. Programa de pós-graduação em economia da FEA RP USP.**
+
+
+The objective of this work is to examine the relationship between unemployment, inflation and violence in Brazil using a vector autoregressive and vector error correction  models. Our hypothesis is that unemployment and inflation increase violence measures. 
+
+Increasing unemployment create incentives for people to enter the crime market, specially related to property crimes. Violent crimes increase due to social instability from unemployment. 
+
+Inflation can increase violent crimes through the costs of living. If a family is going through economic difficulties this can increase the propensity of some of member to enter illegal activity or crimes, and the instability created can increase violent crimes.
+
+It is unlikely that unemployment may have an impact in violent crimes commited by hardened criminals. But the persistence of unemployment induces people to enter the criminal activity and increse cases of violent crimes. 
+
+
+There is a difference between violent crime and property crime. The last have an economic motivation and have been widely studied specially using cross-section and panel data [@saridakis2004]. But violent crime does not have necessarily an economic motivation and have a space for more research.
+
+@tang2009 studies the relation among crime, unemployment and inflation in Malaysia. He found long-run equilibruim relationship between unemployment, inflation and crime. There is Granger causality from unemployment and inflation to crime, but there is no reverse causality. The cointegrating vector shows that increasing unemployment and inflation increse crime. He uses data from 1970 to 2006 with violent crimes and property crimes.
+
+@saridakis2004 studies the relationship between socio-economic variables and violence in the USA from 1960 to 2000.
+The author find no long-run relationship between socio-economic variables and violence. But he finds short-run relatioship. His violence variables include: murder, rape and assault. He find that unemployment play an unimportant role in explaining violence. 
+
+@saridakis2011 using cointegration analyzes the long run relationthip between violent crimes, economic conditions, justice system and beer comsuption in England and Wales. He finds that there is long-run relationship between economic variables, police deterrence and aggravated assault. 
+
+Using cointegration, @santos_kassouf2014 investigate how violent crime is related with unemployment and law-enforcement activities in the city of São Paulo. They find that violent crimes are positively related to unemployment and negatively related to real wages. 
+
+For some types of crimes we find some relationships between unemployment and inflation and violent crime, but for most varibles analyzed we do not find statistically significant relations. @santos_kassouf2014 do not find short-run relationship between those variables. The authors use data about homicide and robbery aggravated by death. 
+
+@corman1987 use a VAR model to study the relatioship between unemployment, demographics and police and property-related felony crimes, for 1970 to 1984 in New York city. They find a weak positive relation between unemployment and violence.  
+
+The variables used are:
+
+* Unemployment 2001-10 ~ 2016-02
+
+* Inflation 1999-01 ~ 2018-10
+	
+* Violence measures 2004-01 ~ 2017-06
+	+ rape
+	+ homicides
+	+ vehicle theft
+	+ vehicle robbery
+	+ personal injury and death
+	+ felony murder
+
+The VAR/VECM methods applied use variable of unemployment, inflation and one of the violence measures. When restricting for the three variables the time period is: 2004-01 ~ 2016-02 there are 146 periods.
+
+After estimatioing VAR model there are many investigations to apply:
+
+*  Diagnostic tests:
+    +  absence of autocorrelation in the residuals
+    +  heteroskedasticity
+    +  non normality
+
+*  causal inference
+
+*  impulse response function 
+
+* forecast error variance decomposition
+
+The variables are not all stationary, we apply in the next section analysis with rate of change of violence and unemployment and inflation.
+
+Given that the variables are not all I(0) we need to test if there is cointegration, if there is the next procedure is to apply a VECM.
+
+
+
+```{r, echo=FALSE, include=FALSE}
+
+library(ggplot2)
+library(readxl)  
+library(aTSA)
+library(data.table)
+library(xts)
+library(urca)
+library(vars)
+
+setwd("C:/Users/willi/Desktop/working/Projects/RAW_DATA")
+tx.desem <- fread(input='Taxa de desemprego.csv', sep='auto', 
+                    sep2='auto', integer64='double')
+
+#treatment of data
+#drop the "Fonte IBGE" from the last line
+tx.desem <- tx.desem[-length(tx.desem$Data),]
+
+#different variables for unemployment
+#change names of variables
+names(tx.desem) <- c("date","rt.ch.unem")
+
+#unemployment series are in character format
+#unemployment rate
+tx.desem$rt.ch.unem <- as.numeric( gsub(",",".",tx.desem$rt.ch.unem))
+
+ind1 <- tx.desem$rt.ch.unem
+
+rt.ch.unem.m <- diff(ind1)/ind1[-length(ind1)]
+rt.ch.unem.m <- c(NA,rt.ch.unem.m)
+tx.desem$rt.ch.unem <- rt.ch.unem.m
+
+#make dates in date format
+tx.desem$date <-  as.Date(paste("01", #day 1 for all months
+                                  substr(tx.desem$date,1,2), #month 
+                                  substr(tx.desem$date,4,7), #year
+                                  sep = '.')  
+                            ,"%d.%m.%Y")  
+
+
+#import data of inflation
+setwd("C:/Users/willi/Desktop/working/Projects/RAW_DATA")
+inflation <- read_excel("ipca.xls")
+inflation <- inflation[,1:3]
+year <- as.character(inflation$ano) 
+#fix year column
+for (t in 1:length(year)) {
+  if (is.na(year[t])==TRUE){year[t] <- year[t-1]} 
+}
+inflation$ano <- year
+#change "mes" form
+month <- inflation$mês
+for (t in 1:length(month)) {
+  if (month[t]=="JAN"){month[t] <- "01"}
+  if (month[t]=="FEV"){month[t] <- "02"} 
+  if (month[t]=="MAR"){month[t] <- "03"} 
+  if (month[t]=="ABR"){month[t] <- "04"} 
+  if (month[t]=="MAI"){month[t] <- "05"} 
+  if (month[t]=="JUN"){month[t] <- "06"} 
+  if (month[t]=="JUL"){month[t] <- "07"} 
+  if (month[t]=="AGO"){month[t] <- "08"} 
+  if (month[t]=="SET"){month[t] <- "09"} 
+  if (month[t]=="OUT"){month[t] <- "10"} 
+  if (month[t]=="NOV"){month[t] <- "11"} 
+  if (month[t]=="DEZ"){month[t] <- "12"} 
+}
+inflation$mês <- month
+
+#create variable for date
+inflation$date <- as.Date(paste("01",month,year,sep='.'),"%d.%m.%Y")
+inflation <-as.data.frame(inflation[,c(3,4)])  
+inflation <- inflation[,c(2,1)]
+
+#create variable for rate of change of price index
+#rate of inflation per month
+rt.inflation.m <- diff(inflation$indice)/inflation$indice[-nrow(inflation)]
+rt.inflation.m <- c(c(NA),rt.inflation.m)
+inflation$rt.month <- rt.inflation.m
+
+#function to build the inflation of the last 12 months
+rt.inflation.12months <- function(){
+  index <- inflation$indice
+  rt.inflation.12months.i <- rep(NA,length(index))
+  for (t in 13:length(index)) {
+    rt.inflation.12months.i[t] <- (index[t] - index[t-12])/index[t-12]}
+  rt.inflation.12months.i
+  }
+rt.inflation.12m <- rt.inflation.12months()
+inflation$rt.12month <- rt.inflation.12m
+
+
+
+#build data for violence
+setwd("C:/Users/willi/Desktop/working/Projects/RAW_DATA/SINESPJC")
+#data from Ministry of Justice of Brazil
+#it contains data in months per municipality and type of crime
+
+#import data about violence 2017
+function.violence.base <- function(){
+myFiles <- c("ocorrenciasmun-brasil2017.xlsx",
+             "ocorrenciasmun-brasil2016.xlsx",
+             "ocorrenciasmun-brasil2015.xlsx",
+             "ocorrenciasmun-brasil2014.xlsx",
+             "ocorrenciasmun-brasil2013.xlsx",
+             "ocorrenciasmun-brasil2012.xlsx",
+             "ocorrenciasmun-brasil2011.xlsx",
+             "ocorrenciasmun-brasil2010.xlsx",
+             "ocorrenciasmun-brasil2009.xlsx",
+             "ocorrenciasmun-brasil2008.xlsx",
+             "ocorrenciasmun-brasil2007.xlsx",
+             "ocorrenciasmun-brasil2006.xlsx",
+             "ocorrenciasmun-brasil2005.xlsx",
+             "ocorrenciasmun-brasil2004.xlsx")
+base_violence <- data.frame(type_crime=NA,date=NA,qt_violence=NA)
+i <- "ocorrenciasmun-brasil2015.xlsx"
+for(i in myFiles){
+  violence.h <- as.data.frame(read_excel(i)) 
+  violence.h <- violence.h[,c(6,8,9)]
+  violence.h$`Mês/Ano`<-as.character(violence.h$`Mês/Ano`)  
+  names(violence.h) <- c("type_crime","date","qt_violence")
+  violence.h <- aggregate(violence.h[,-c(1,2)], 
+                            by=list(violence.h$type_crime,violence.h$date), 
+                            FUN=sum, na.rm=TRUE)
+  names(violence.h) <- c("type_crime","date","qt_violence")
+  
+  base_violence <- rbind(base_violence,violence.h)
+}
+
+
+base_violence <- base_violence[-1,]
+}
+
+base.violence<-function.violence.base()
+
+#change date for Date type
+date <- as.Date(base.violence$date,"%Y-%m-%d")  
+base.violence$date <- date
+
+#estupro
+rape <- 
+  base.violence[base.violence$type=='Estupro',][,c(2,3)]
+names(rape) <- c("date",'rt.rape')
+
+#rate of change of rape
+ind1 <- rape$rt.rape
+rt.rape <- diff(ind1)/ind1[-length(ind1)]
+rt.rape <- c(c(NA),rt.rape)
+rape$rt.rape <- rt.rape
+
+
+#homicidio doloso
+homicide<-
+  base.violence[base.violence$type=='Homicídio doloso',][,c(2,3)]
+names(homicide) <- c("date","rt.homicide")
+
+#rate of change of homicides
+ind1 <- homicide$rt.homicide
+rt.homicide <- diff(ind1)/ind1[-length(ind1)]
+rt.homicide <- c(c(NA),rt.homicide)
+homicide$rt.homicide <- rt.homicide
+
+
+vehicle_theft<-#roube de veiculo
+  base.violence[base.violence$type=='Roubo de veículo',][,c(2,3)] 
+names(vehicle_theft) <- c("date","rt.veh.theft")
+
+#rate of change of vehicle theft
+ind1 <- vehicle_theft$rt.veh.theft
+rt.veh.theft <- diff(ind1)/ind1[-length(ind1)]
+rt.veh.theft <- c(c(NA),rt.veh.theft)
+vehicle_theft$rt.veh.theft <- rt.veh.theft
+
+
+vehicle_robbery <-#assalto a veiculo  
+  base.violence[base.violence$type=='Furto de veículo',][,c(2,3)] 
+names(vehicle_robbery) <- c("date","rt.veh.robbery")
+
+#rate of change of vehicle robbery
+ind1 <- vehicle_robbery$rt.veh.robbery
+rt.veh.robbery <- diff(ind1)/ind1[-length(ind1)]
+rt.veh.robbery <- c(c(NA),rt.veh.robbery)
+vehicle_robbery$rt.veh.robbery <- rt.veh.robbery
+
+
+
+personal_injury_death <-#lesao corporal seguida de morte
+  base.violence[base.violence$type=='Lesão corporal seguida de morte',][,c(2,3)] 
+names(personal_injury_death) <- c("date","rt.per.injury")
+
+#rate of change of personal injury and death
+ind1 <- personal_injury_death$rt.per.injury
+rt.per.injury <- diff(ind1)/ind1[-length(ind1)]
+rt.per.injury <- c(c(NA),rt.per.injury)
+personal_injury_death$rt.per.injury <- rt.per.injury
+
+
+felony_murder <-#roubo seguido de morte (latrocinio)
+  base.violence[base.violence$type=='Roubo seguido de morte (latrocínio)',][,c(2,3)] 
+names(felony_murder) <- c("date","rt.fel.murder")
+
+#rate of change of personal injury and death
+ind1 <- felony_murder$rt.fel.murder
+rt.fel.murder <- diff(ind1)/ind1[-length(ind1)]
+rt.fel.murder <- c(c(NA),rt.fel.murder)
+felony_murder$rt.fel.murder <- rt.fel.murder
+
+```
+
+
+
+```{r, echo=FALSE}
+build.base.ts <- 
+  function(){
+#rate of unemployment
+tx.desem.ts <- as.xts(tx.desem$rt.ch.unem,order.by = tx.desem$date)
+names(tx.desem.ts) <- c("rt.unem")
+
+#inflation rate per month
+inflation.month.ts <- as.xts(inflation$rt.month,order.by = inflation$date)
+names(inflation.month.ts) <- c("rt.inflation.month")
+
+#inflation rate per 12 months
+inflation.12month.ts <- as.xts(inflation$rt.12month,order.by = inflation$date)
+names(inflation.12month.ts) <- c("rt.inflation.12month")
+
+#rape quantity of cases
+rape.ts <- as.xts(rape$rt.rape,order.by = rape$date)
+names(rape.ts) <- c("rape")
+
+#homicides quantity of cases
+homicide.ts <- as.xts(homicide$rt.homicide,
+                      order.by = homicide$date)
+names(homicide.ts) <- c("homicide")
+
+#vehicle theft quantity of cases
+vehicle_theft.ts <- as.xts(vehicle_theft$rt.veh.theft,
+                           order.by = vehicle_theft$date)
+names(vehicle_theft.ts) <- c("vehicle_theft")
+
+#vehicle robbery quantity of cases
+vehicle_robbery.ts <- as.xts(vehicle_robbery$rt.veh.robbery,
+                             order.by = vehicle_robbery$date)
+names(vehicle_robbery.ts) <- c("vehicle_robbery")
+
+#personal injury and death quantity of cases
+personal_injury_death.ts <- as.xts(personal_injury_death$rt.per.injury,
+                                   order.by = personal_injury_death$date)
+names(personal_injury_death.ts) <- c("personal_injury_death")
+
+#felony murder quantity of cases
+felony_murder.ts <- as.xts(felony_murder$rt.fel.murder,
+                           order.by = felony_murder$date)
+names(felony_murder.ts) <- c("felony_murder")
+
+#merging xts
+base.ts <- merge.xts(tx.desem.ts
+                     ,inflation.month.ts,inflation.12month.ts,
+                     rape.ts,homicide.ts,vehicle_theft.ts,
+                     vehicle_robbery.ts,personal_injury_death.ts,felony_murder.ts)
+}
+```
+
+#Analysis for rate of change
+
+This section analyzes the variables of unemployment, inflation and violence measures in their rate of change. The overall result is that there is dim or no relation between the three variables. 
+
+
+## Unemployment
+
+```{r, echo=FALSE, include=FALSE}
+
+base.ts <- build.base.ts()
+names(base.ts)
+```
+
+
+```{r inflation12months_test  , echo=FALSE, include=FALSE}
+#rape, unemployment and 12months inflation rate
+base.temp1 <- base.ts[,c(1,3,4)]
+base.temp2 <- base.temp1[!is.na(base.temp1[,1])&!is.na(base.temp1[,2])&!is.na(base.temp1[,3]),]
+
+adf.test(as.numeric(base.temp2$rt.inflation.12month))
+#inflation 12 months is I(1)
+
+plot.xts(base.temp2$rt.inflation.12month, main = "12 months rate of inflation" )
+
+#reason to not use the 12 months inflation with the difference analysis
+#as the 12 months inflation is I(1), I dont know if I can use with other I(0)
+#variables
+
+
+```
+
+
+```{r, echo=FALSE}
+#rape, unemployment and monthly inflation rate
+base.temp1 <- base.ts[,c(1,2,4)]
+base.temp2 <- base.temp1[!is.na(base.temp1[,1])&!is.na(base.temp1[,2])&!is.na(base.temp1[,3]),]
+
+
+
+plot.xts(base.temp2$rt.unem, main = "monthly change of unemployment rate" )
+
+#adf test for monthly change of unemployment rate
+adf.test( as.numeric(base.temp2$rt.unem) )
+#monthly change of unemployment rate is I(0) when not including trend nor constant
+
+
+
+```
+
+Monthly rate of change of unemployment is stationary.
+
+## Inflation
+
+```{r}
+
+
+plot.xts(base.temp2$rt.inflation.month, main = "monthly rate of inflation" )
+
+adf.test( as.numeric(base.temp2$rt.inflation.month) )
+
+```
+
+Inflation rate per month is stationary.
+
+
+## Rape variable
+
+Test for unit-root in rate of change of rape cases. Present VAR model with three variables: rate of change of unemployment, inflation rate, rate of change of rape. 
+
+```{r}
+
+plot.xts(base.temp2$rape, main = "monthly rate of change of rape cases" )
+
+adf.test( as.numeric(base.temp2$rape) )
+
+
+
+m.rape.inf.unem <- VAR(base.temp2, type = "none", p=1) 
+summary(m.rape.inf.unem, equation="rape")
+
+causality(m.rape.inf.unem, 
+          cause = c("rt.unem","rt.inflation.month"),boot.runs=100)
+
+```
+
+Unemployment and inflation are not significant and do not Granger cause rape. 
+
+
+
+## Homicide rate of change
+
+```{r, echo=FALSE}
+base.temp1 <- base.ts[,c(1,2,5)]
+base.temp2 <- base.temp1[!is.na(base.temp1[,1])&!is.na(base.temp1[,2])&!is.na(base.temp1[,3]),]
+
+plot.xts(base.temp2$homicide, main = "monthly rate of change of homicide cases" )
+
+m.homicide.inf.unem <- VAR(base.temp2, type = "none", p=1) 
+summary(m.homicide.inf.unem, equation="homicide")
+
+causality(m.homicide.inf.unem, 
+          cause = c("rt.unem","rt.inflation.month"),boot.runs=100)
+serial.test(m.homicide.inf.unem)
+
+```
+
+Homicide rate of change is stationary. Unemployment and inflation are not significant in the equation for homicide. Unemployment and inflation do not Granger cause rate of change of homicide.
+
+
+## Vehicle theft rate of change
+
+```{r}
+base.temp1 <- base.ts[,c(1,2,6)]
+base.temp2 <- base.temp1[!is.na(base.temp1[,1])&!is.na(base.temp1[,2])&!is.na(base.temp1[,3]),]
+
+plot.xts(base.temp2$vehicle_theft, main = "monthly rate of change of vehicle theft cases" )
+
+m.vehicle_theft.inf.unem <- 
+  VAR(base.temp2, type = "none", p=1) 
+summary(m.vehicle_theft.inf.unem,
+        equation="vehicle_theft")
+causality(m.vehicle_theft.inf.unem, 
+          cause = c("rt.unem","rt.inflation.month"),boot.runs=100)
+```
+
+Rate of change of vehicle theft is stationary (omitted table). The model with 1 lag indicate that there is no Granger causality between unemployment and inflation to vehicle theft. And the coefficients are not significant. Next we test VAR(3) model.
+
+```{r}
+m.vehicle_theft.inf.unem <- 
+  VAR(base.temp2, type = "none", p=3) 
+summary(m.vehicle_theft.inf.unem,
+        equation="vehicle_theft")
+causality(m.vehicle_theft.inf.unem, 
+          cause = c("rt.unem","rt.inflation.month"),boot.runs=100)
+plot(irf(m.vehicle_theft.inf.unem, n.ahead =20, impulse=c("rt.inflation.month"),response="vehicle_theft"))
+```
+
+We test the model with 3 lags, inflation is significant and positive, but there is no Granger causality from unemployment and inflation to vehicle theft. 
+
+
+## Vehicle robbery varialbe
+
+```{r}
+base.temp1 <- base.ts[,c(1,2,7)]
+base.temp2 <- base.temp1[!is.na(base.temp1[,1])&!is.na(base.temp1[,2])&!is.na(base.temp1[,3]),]
+
+
+plot.xts(base.temp2$vehicle_robbery, main = "monthly rate of change of vehicle robbery cases" )
+
+m.vehicle_robbery.inf.unem <- 
+  VAR(base.temp2, type = "none", p=1) 
+summary(m.vehicle_robbery.inf.unem,
+        equation="vehicle_robbery")
+
+causality(m.vehicle_robbery.inf.unem, 
+          cause = c("rt.unem","rt.inflation.month"),boot.runs=100)
+
+```
+
+Vehicle robbery is stationary (omitted table). Unemployment and inflation are not significant and do not Granger cause vehicle robbery. 
+
+## Personal injury and death
+
+```{r}
+
+base.temp1 <- base.ts[,c(1,2,8)]
+base.temp2 <- base.temp1[!is.na(base.temp1[,1])&!is.na(base.temp1[,2])&!is.na(base.temp1[,3]),]
+
+plot.xts(base.temp2$personal_injury_death, main = "monthly rate of change of personal injury and death cases" )
+
+m.personal_injury_death.inf.unem <- 
+  VAR(base.temp2, type = "none", lag.max = 5, ic = "SC") 
+summary(m.personal_injury_death.inf.unem,
+        equation="personal_injury_death")
+
+causality(m.personal_injury_death.inf.unem, 
+          cause = c("rt.unem","rt.inflation.month"),boot.runs=100)
+```
+Personal injury and death is stationary (table omitted). Unemployment and inflation are not significant and do not Granger cause personal injury and death. 
+
+
+## Felony murder variable
+
+```{r}
+#homicide, unemployment and monthly inflation rate
+base.temp1 <- base.ts[,c(1,2,9)]
+base.temp2 <- base.temp1[!is.na(base.temp1[,1])&!is.na(base.temp1[,2])&!is.na(base.temp1[,3]),]
+
+plot.xts(base.temp2$felony_murder, main = "monthly rate of change of felony murder cases" )
+
+m.felony_murder.inf.unem <- VAR(base.temp2, type = "none", lag.max = 5, ic = "SC") 
+summary(m.felony_murder.inf.unem,  equation = "felony_murder")
+
+par(mar=c(1,1,1,1))
+plot(irf(m.felony_murder.inf.unem, n.ahead =20, impulse=c("rt.inflation.month"),response="felony_murder"))
+
+
+causality(m.felony_murder.inf.unem, cause = c("rt.unem","rt.inflation.month"),boot.runs=100)
+
+```
+
+Felony murder is stationary (table omitted). Inflation is significant and positive. Inflation and unemployment Granger cause felony murder. 
+
+
+# Analysis on level
+
+Given that there not significant results using rate of change of variables, we test on level. Many of the variables are non-stationary and have significant results.
+
+```{r preparing.base.level , echo=FALSE, include=FALSE}
+# preparing data for level analysis
+
+setwd("C:/Users/willi/Desktop/working/Projects/RAW_DATA")
+tx.desem1 <- fread(input='Taxa de desemprego.csv', sep='auto', 
+                    sep2='auto', integer64='double')
+
+#treatment of data
+#drop the "Fonte IBGE" from the last line
+tx.desem1 <- tx.desem1[-length(tx.desem1$Data),]
+
+#different variables for unemployment
+#change names of variables
+names(tx.desem1) <- c("date","rt.unem")
+
+
+#unemployment series are in character format
+#unemployment rate
+tx.desem1$rt.unem <- as.numeric( gsub(",",".",tx.desem1$rt.unem))
+
+
+#make dates in date format
+tx.desem1$date <-  as.Date(paste("01", #day 1 for all months
+                                  substr(tx.desem1$date,1,2), #month 
+                                  substr(tx.desem1$date,4,7), #year
+                                  sep = '.')  
+                            ,"%d.%m.%Y")  
+
+
+
+
+#estupro
+rape1 <- 
+  base.violence[base.violence$type=='Estupro',][,c(2,3)]
+names(rape1) <- c("date",'rape')
+
+#homicidio doloso
+homicide1<-
+  base.violence[base.violence$type=='Homicídio doloso',][,c(2,3)]
+names(homicide1) <- c("date","homicide")
+
+vehicle_theft1<-#roube de veiculo
+  base.violence[base.violence$type=='Roubo de veículo',][,c(2,3)] 
+names(vehicle_theft1) <- c("date","veh.theft")
+
+vehicle_robbery1 <-#assalto a veiculo  
+  base.violence[base.violence$type=='Furto de veículo',][,c(2,3)] 
+names(vehicle_robbery1) <- c("date","veh.robbery")
+
+personal_injury_death1 <-#lesao corporal seguida de morte
+  base.violence[base.violence$type=='Lesão corporal seguida de morte',][,c(2,3)] 
+names(personal_injury_death1) <- c("date","per.injury")
+
+felony_murder1 <-#roubo seguido de morte (latrocinio)
+  base.violence[base.violence$type=='Roubo seguido de morte (latrocínio)',][,c(2,3)] 
+names(felony_murder1) <- c("date","fel.murder")
+
+
+build.base.ts1 <- 
+  function(){
+#rate of unemployment
+unem.ts <- as.xts(tx.desem1$rt.unem, order.by = tx.desem1$date)
+names(unem.ts) <- c("unem")
+
+#inflation rate per month
+inflation.m.ts1 <- as.xts(inflation$rt.month,order.by = inflation$date)
+names(inflation.m.ts1) <- c("rt.inflation.month")
+
+#inflation rate per 12 months
+inflation.12month.ts <- as.xts(inflation$rt.12month,order.by = inflation$date)
+names(inflation.12month.ts) <- c("rt.inflation.12month")
+
+#rape quantity of cases
+rape.ts <- as.xts(rape1$rape ,order.by = rape1$date)
+names(rape.ts) <- c("rape")
+
+#homicides quantity of cases
+homicide.ts <- as.xts(homicide1$homicide,
+                      order.by = homicide1$date)
+names(homicide.ts) <- c("homicide")
+
+#vehicle theft quantity of cases
+vehicle_theft.ts <- as.xts(vehicle_theft1$veh.theft,
+                           order.by = vehicle_theft1$date)
+names(vehicle_theft.ts) <- c("vehicle_theft")
+
+#vehicle robbery quantity of cases
+vehicle_robbery.ts <- as.xts(vehicle_robbery1$veh.robbery,
+                             order.by = vehicle_robbery1$date)
+names(vehicle_robbery.ts) <- c("vehicle_robbery")
+
+#personal injury and death quantity of cases
+personal_injury_death.ts <- as.xts(personal_injury_death1$per.injury,
+                                   order.by = personal_injury_death1$date)
+names(personal_injury_death.ts) <- c("personal_injury_death")
+
+#felony murder quantity of cases
+felony_murder.ts <- as.xts(felony_murder1$fel.murder,
+                           order.by = felony_murder1$date)
+names(felony_murder.ts) <- c("felony_murder")
+
+#merging xts
+base.ts <- merge.xts(
+          unem.ts,
+          inflation.m.ts1,
+          inflation.12month.ts,
+          rape.ts,
+          homicide.ts,
+          vehicle_theft.ts,
+          vehicle_robbery.ts,
+          personal_injury_death.ts,
+          felony_murder.ts)
+}
+
+
+base.ts1 <- build.base.ts1()
+
+```
+
+
+
+## Unemployment
+
+```{r, echo=FALSE}
+base.temp1 <- base.ts1[,c(1,2,4)]
+base.temp2 <- base.temp1[!is.na(base.temp1[,1])&!is.na(base.temp1[,2])&!is.na(base.temp1[,3]),]
+
+plot.xts(base.temp2$unem, main = "rate of unemployment" )
+
+adf.test( as.numeric(base.temp2$unem) )
+
+```
+ 
+Rate of unemployment is not stationary. 
+
+
+## Rape variable
+
+```{r}
+
+plot.xts(base.temp2$rape, main = "rape  nº of cases" )
+
+
+adf.test( as.numeric(base.temp2$rape) )
+
+
+
+rape.ml <- VAR(base.temp2, lag.max=5, ic="SC", type="none")
+summary(rape.ml, equation="rape")
+
+normality.test(rape.ml)
+serial.test(rape.ml)
+
+par(mar=c(1,1,1,1))
+plot(irf(rape.ml, n.ahead =20, impulse=c("unem","rt.inflation.month"),response="rape"))
+
+
+
+causality(rape.ml, 
+          cause = c("unem","rt.inflation.month"),boot.runs=100)
+
+```
+
+Rape is non-stationary. The estimates for unemployment and inflation are not significant. There is no Granger causality of unemployment and inflation to rape. The residuals are non-Gaussian and have serial correlation. But the graph of IRF shows a positive shock in inflation and unemployment increase the cases of rape. The impact of unemployment increases with time and is persistent. The impact of inflation increases and then diminishes but still is persistent.
+
+
+## Homicide variable
+
+```{r, echo=FALSE}
+#homicide, unemployment and monthly inflation rate
+base.temp1 <- base.ts1[,c(1,2,5)]
+base.temp2 <- base.temp1[!is.na(base.temp1[,1])&!is.na(base.temp1[,2])&!is.na(base.temp1[,3]),]
+
+plot.xts(base.temp2$homicide, main = " homicide cases nº of cases" )
+
+adf.test( as.numeric(base.temp2$homicide) )
+
+hom.ml <- VAR(base.temp2, type = "none", lag.max = 5, ic = "SC") 
+summary(hom.ml, equation="homicide")
+
+normality.test(hom.ml)
+serial.test(hom.ml)
+
+par(mar=c(1,1,1,1))
+plot(irf(hom.ml, n.ahead =20, impulse=c("unem","rt.inflation.month"),response="homicide"))
+
+causality(hom.ml, 
+          cause = c("unem","rt.inflation.month"),boot.runs=100)
+plot(fevd(hom.ml, n.ahead=20))
+```
+
+Homicide is stationary when including constant or trend. 
+
+The coefficient of unemployment on homicide is significant and positive, which means that an increase in the rate of unemployment increases cases of homicides. Inflation is not significant. Unemployment and inflation Granger cause homicides with 0.0203 p-value. The residuals are non-Gaussian, but have no serial correlation. The IRF graph shows that unemployment have a permanent and increasing impact on homicide. The impact of inflation incraeses peaking in 4 to 5 months and fades with time but still is persistent.
+
+
+## Vehicle theft variable
+
+```{r}
+base.temp1 <- base.ts1[,c(1,2,6)]
+base.temp2 <- base.temp1[!is.na(base.temp1[,1])&!is.na(base.temp1[,2])&!is.na(base.temp1[,3]),]
+
+plot.xts(base.temp2$vehicle_theft, main = "vehicle theft nº of cases" )
+
+adf.test( as.numeric(base.temp2$vehicle_theft) )
+
+
+
+veh.t.ml <- VAR(base.temp2, type = "none", lag.max = 5, ic = "SC") 
+#veh.t.ml <- VAR(base.temp2, type = "none", p=3) 
+summary(veh.t.ml, equation="vehicle_theft")
+
+causality(veh.t.ml, 
+          cause = c("unem","rt.inflation.month"),boot.runs=100)
+
+normality.test(veh.t.ml)
+
+serial.test(veh.t.ml)
+
+plot(irf(veh.t.ml, n.ahead =20, impulse=c("unem","rt.inflation.month"),response="vehicle_theft"))
+```
+
+Vehicle theft is non-stationary. Unemployment and inflation are not statistically significant to explain vehicle theft. Unemployment and inflation do not Granger cause vehicle theft. The residuals are non-Gaussian and have serial correlation. The IRF shows that the impact of unemployment is positive and persistent and inflation increases in the first four months and decreases. 
+
+
+
+
+## Vehicle robbery variable
+
+```{r}
+#vehicle theft, unemployment and monthly inflation rate
+base.temp1 <- base.ts1[,c(1,2,7)]
+base.temp2 <- base.temp1[!is.na(base.temp1[,1])&!is.na(base.temp1[,2])&!is.na(base.temp1[,3]),]
+
+plot.xts(base.temp2$vehicle_robbery, main = "vehicle robbery nº of cases" )
+
+adf.test( as.numeric(base.temp2$vehicle_robbery) )
+
+
+
+veh.r.ml <- VAR(base.temp2, type="none", lag.max = 5, ic = "SC") 
+summary(veh.r.ml, equation="vehicle_robbery")
+
+normality.test(veh.r.ml)
+
+serial.test(veh.r.ml)
+
+par(mar=c(1,1,1,1))
+plot(irf(veh.r.ml, n.ahead =20, impulse=c("unem","rt.inflation.month"),response="vehicle_robbery"))
+
+causality(veh.r.ml, 
+          cause = c("unem","rt.inflation.month"),boot.runs=100)
+
+plot(fevd(veh.r.ml, n.ahead = 20))
+
+```
+
+
+Vehicle robbery is non-stationary. In 2010 and january 2016 there are unusual falls of number of cases,this happens with vehicle theft too. 
+
+Unemployment have 0.094 p-value and is positive, inflation have 0.144 p-value and is positive. Granger causility test shows that unemployment and inflation cause vehicle robbery. The IRF graph shows that unemployment and inflation have permanent effect on the number of cases of vehicle robbery. The residuals are non-Gaussian and there is serial correlation. 
+
+
+
+## Personal injury and death
+
+```{r}
+base.temp1 <- base.ts1[,c(1,2,8)]
+base.temp2 <- base.temp1[!is.na(base.temp1[,1])&!is.na(base.temp1[,2])&!is.na(base.temp1[,3]),]
+
+plot.xts(base.temp2$personal_injury_death,main= "personal injury and death nº of cases" )
+
+adf.test(as.numeric(base.temp2$personal_injury_death))
+
+
+
+pers.ml <- VAR(base.temp2, type="none", lag.max = 5, ic = "SC") 
+summary(pers.ml, equation="personal_injury_death")
+
+causality(pers.ml, 
+          cause = c("unem","rt.inflation.month"),boot.runs=100)
+
+normality.test(pers.ml)
+
+serial.test(pers.ml)
+
+par(mar=c(1,1,1,1))
+plot(fevd(pers.ml, n.ahead =20))
+plot(irf(pers.ml, n.ahead =20, impulse=c("unem","rt.inflation.month"),response="personal_injury_death"))
+```
+
+Personal injury and death is stationary, when using a constant deterministic coefficient.
+
+The estimate of unemploymet is significant and positive, inflation have 0.11 p-value and is positive. 
+Unemployment and inflation Granger cause  personal injury and death.
+The IRF graph and shows that shocks of unemployment and inflation increase the cases of personal injury and death.
+
+The crime of personal injury and death do not necessarily have an economic motivation. An example of this case is a personal motivation to attack someone but without intetion to kill the person, the victim is not killed on the spot, but dies some days later.
+
+
+## Felony murder variable
+
+```{r VAR1}
+base.temp1 <- base.ts1[,c(1,2,9)]
+base.temp2 <- base.temp1[!is.na(base.temp1[,1])&!is.na(base.temp1[,2])&!is.na(base.temp1[,3]),]
+
+plot.xts(base.temp2$felony_murder, main = "felony murder nº of cases")
+
+adf.test(as.numeric(base.temp2$felony_murder))
+
+
+
+felo.ml <- VAR(base.temp2, type="none", p=1) 
+summary(felo.ml, equation="felony_murder")
+
+causality(felo.ml, 
+          cause = c("unem","rt.inflation.month"),boot.runs=100)
+
+normality.test(felo.ml)
+
+serial.test(felo.ml)
+
+par(mar=c(1,1,1,1))
+plot(fevd(felo.ml, n.ahead =20))
+plot(irf(felo.ml, n.ahead =20, impulse=c("unem","rt.inflation.month"),response="felony_murder"))
+plot(stability(felo.ml))
+
+```
+
+With few lags in the ADF test, felony murder is stationary. With more lags felony murder is non-stationary. 
+
+Compared to the other violence variable, felony murder respond more to shocks of unemployment and inflation. Maybe a reason for this is that felony murder have an economic motivation, rape or homicide e.g. do not have economic motivation. 
+The signs of coefficients of unemployment and inflation are positive and significant, this means that an increase in inflation and unemployment increase the cases of felony murder. Unemployment and inflation Granger cause felony murder. 
+
+Compared to the other violence variables, the FEVD of felony murder shows greater impact of uneployment and inflation. The IRF graph shows that shocks in unemployment and inflation increase the number of cases in felony murder. The shocks have permanent effect on felony murder. Inflation shock increases till three months and then decreases. Unemployment shock have an initial impact and then falls.
+Unemployment and inflation do not respond to felony murder.
+
+The residuals are non-Gaussian. In a perfect situation the OLS CUSUM graph should revolve around zero, but it is not the case. Also there is serial correlation in the residuals. Those are signs that the VAR(1) model is too simple, there is still information  that can be used in the variables, hence in the next section we use a VAR(5) model.  
+
+## Felony Murder more lags
+```{r VAR5}
+
+felo.mlv3 <- VAR(base.temp2, type="none", p=5) 
+summary(felo.mlv3, equation="felony_murder")
+
+causality(felo.mlv3, 
+          cause = c("unem","rt.inflation.month"),boot.runs=100)
+
+
+normality.test(felo.mlv3)
+serial.test(felo.mlv3)
+#par(mar=c(5.1,4.1,4.1,2.1))
+par(mar=c(1,1,1,1))
+plot(fevd(felo.mlv3, n.ahead =20))
+plot(irf(felo.mlv3, n.ahead =20, impulse=c("unem","rt.inflation.month"),response="felony_murder"))
+plot(stability(felo.mlv3))
+
+```
+
+
+The VAR(5) model does not have serial correlation in the residuals. The residuals are non-Gaussian.
+Unemployment and inflation are not significant at 1% in the felony murder equation, the inclusion of 5 lags made them non significant. Results with lower lags do not change much. And unemployment and inflation does not Granger cause felony murder. There is significant correlation in the innovations of those variables according to the instantaneous causality test and the correlation matrix of residuals.
+
+The second lag of inflation have 0.108 p-value, and is positive. The forth lag of unemployment have 0.099 p-value and is positive. The IRF graphs shows that shocks in inflation and unemployment have the expected effect of increasing cases of violence. 
+
+In the analysis of rate of change, felony murder is the variable the most respond to shocks of unemployment and inflation.
+
+Given that there is indication that felony murder is non-stationary, we apply a cointegration test and VECM.
+
+## Felony murder VECM
+
+```{r cointegration_analysis}
+vecm.felony <-  ca.jo(base.temp2[,c(3,1,2)], type="trace", ecdet="none", K=5, spec="transitory")
+
+summary(vecm.felony)
+
+vecm.felony.r1 <- cajorls(vecm.felony, r=1)
+vecm.felony.r1$beta
+summary(vecm.felony.r1$rlm)
+```
+
+There is one cointegration vector. The long run relation is:
+$$  felony =  10 \cdot unem + 106019  \cdot inf $$
+Which means that high unemployment and inflation are related to high level of felony murder. \texttt{ect1} is the adjustment coefficient $\alpha$. For felony murder's equation $\alpha$ is not significant, which means that felony murder do not adjust to deviations in the long-run relationship. Which disagree with our hypothesis that violence change according to movements of unemployment and inflation.
+
+The adjustment coefficients of unemployment is significant and negative. The adjustment coefficient of inflation is significant and positive. These adjustment coefficients maybe capturing the Phillips curve relation. In the short-run unemployment is affected by inflation, the coefficients are negative and significant. This means that increasing inflation lowers unemployment. In the short-run coefficient, inflation is affected by unemployment and past inflation.
+
+The cointegration vector shows the long-run relationship between felony murder, unemployment and inflation. This result agrees with the persistent impact of unemployment and inflation found in the IRF graphs.
+
+@santos_kassouf2014 found in the adjustment coefficients that violence adjust to deviations in the long-run relationship, differently from the result found here.
+@saridakis2004 did not found cointegrating vector. And he found that economic variables have a stronger relationship with his murder variable.
+
+
+# Data
+
+The variable os unemployment is obtained through the site of the Brazilian Institute of Geography and Statistics (IBGE). The variable was built using the surveys of PNAD asking if the person was employed or looking for job in the last week.
+
+Inflation data is the IPCA (Índice de Preços ao Consumidor Amplo) it captures the price levels of a bundle of goods, giving enphasis in metropolitan regions of Brazil, this is found in the site of IBGE.
+
+Violence variables are available in the site of Ministry of Justice of Brazil. The data have monthly information on the number of occurances of violent crimes in each municipality. This is a dataset built using reports of the civil police. There are other institutions of public security, for example, the state police that a strong presence in each state. So the data does not capture all cases of reported crimes. And many of the violent crimes are under reported.
+
+
+All the cited variables are published in number of cases. The difference between vehicle theft and robbery is that theft does not involve the presence of the victim robbery is assault. Personal injury and death occurs when the victim is injured but do not die on the spot, he dies some hours or days later, hence the objective of the offender was not to kill. Felony murder is robbery followed by assassination. 
+
+
+#Concluding Remarks
+
+The objective of this work is to study the relationship of violent crimes and economic variables using VAR/VEC models. We analyze the variables in level and rate of change. The violent crimes studied are: i) rape; ii) homicides; iii) vehicle theft; iv) vehicle robbery; v) personal injury and death; vi) felony murder. 
+
+In the rate of change analysis we do find for most of the variables significant estimates, hence there is no Granger causality from inflation and unemployment to violent crime. The exception is felony murder, the variable shows a significant relationship, and there is Granger causality. The problem is the variance of the estimates, because their sign is positive as we expect. That is increasing unemployment and inflation increase violence. The IRF graphs show for all variables that unemployment and inflation have positive and permanent impact on violence.
+The analysis is with the rate of change which are I(0) next we study  with the variables in level.
+
+The analysis on level with VAR show that all variable behave as expected the sign of shocks in unemployment and inflation increase violence. But for rape and vehicle theft we do not find statistically significant Granger causality estimates. For homicide, vehicle robbery, personal injury and death, and felony murder there is Granger causality. The IRF shows that the shock of unemployment is positive and persistent in time, it does not diminish with time. Inflation shock increase in the first 3~4 months and then slowly decreases. 
+
+For felony murder we test a VAR with five lags given that the speciafication with one lag showed serial correlation in residuals. The estimates show that inflation and unemployment are slightly significant. And there is no Granger causality. 
+
+We apply a cointegration test on felony murder. We find a long-run relationship between felony murder, inflation and unemployment. The signs of in the cointegrating vector are as expected. However, it is unexpected that the adjustment coefficient of violence is not significant, which means that violence does not adjust to match the long-run relation. The adjustment coefficients of unemployment and inflation are significant, which means that they move to the long-run relation. This indication that the cointegration test is capturing the Phillips curve relation of unemployment and inflation and that violence is irrelevant in the long-run relation. 
+
+
+Further studies: i) study the relationship between inflation, unemployment and crime in states or regions of Brazil; iii) study misdemeanor crimes such as: petty theft, prostitution, public intoxication, simple assault, disorderly conduct, trespass, vandalism, reckless driving, discharging a firearm within city limits, possession of cannabis; iv) use data with other frequencies, annual or quarterly frequency; v) 
+use variables of violence measured by population size, one hundred thousand inhabitants; v) study structural breaks or change in regime in the VAR/VEC models.
+
+
+# References
